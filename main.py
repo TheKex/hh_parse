@@ -1,4 +1,5 @@
 from pprint import pprint
+import re
 
 from selenium import webdriver
 from selenium.common import NoSuchElementException
@@ -6,6 +7,20 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 
 from compensation.compensation import parse_compensation
+
+
+def search_terms_in_vacancy(vacancy_link, terms):
+    chrome_options = Options()
+    chrome_options.page_load_strategy = 'eager'
+    driver = webdriver.Chrome(options=chrome_options)
+    driver.get(vacancy_link)
+    vacancy_content = driver.find_element(By.CLASS_NAME, 'vacancy-description').text
+    driver.close()
+    for term in terms:
+        if re.search(term, vacancy_content, flags=re.IGNORECASE):
+            return True
+    return False
+
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
@@ -36,5 +51,6 @@ if __name__ == '__main__':
             'link': vacancy_link,
             'compensation': parse_compensation(compensation)
         })
-    pprint(vacancies_list)
+    pprint([vacancy for vacancy in vacancies_list if search_terms_in_vacancy(vacancy['link'], ['django', 'flask'])])
+
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
