@@ -1,6 +1,9 @@
 from pprint import pprint
 import re
 import time
+from urllib.parse import urljoin
+import urllib.parse as urlparse
+from urllib.parse import urlencode
 
 from selenium import webdriver
 from selenium.common import NoSuchElementException
@@ -10,7 +13,6 @@ from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
-
 
 from compensation.compensation import parse_compensation
 
@@ -48,35 +50,21 @@ def search_terms_in_vacancy(driver, vacancy_link, terms):
     return False
 
 
-# Press the green button in the gutter to run the script.
-if __name__ == '__main__':
-    chrome_options = Options()
-    chrome_options.page_load_strategy = 'eager'
-    driver = webdriver.Chrome(options=chrome_options)
-    driver.get("https://spb.hh.ru/search/vacancy?text=python&area=1&area=2")
-
-
-    # class="vacancy-serp-content tag^ main
-    # actions = ActionChains(driver)
-    # actions.send_keys(Keys.END)
-    # actions.perform()
+def get_page_vacancies(driver, link):
+    driver.get(link)
 
     wait_attempts_count = 10
     vacancies_tag = vacancies_list_tags = None
+    vacancies_list = []
     for _ in range(wait_attempts_count):
         time.sleep(1)
         print('attempt', _)
         vacancies_tag = driver.find_element(By.ID, 'a11y-main-content')
         vacancies_list_tags = vacancies_tag.find_elements(By.CLASS_NAME, 'serp-item')
+        print(len(vacancies_list_tags))
         if len(vacancies_list_tags) != 20:
             break
-    pager_tag = driver.find_element(By.CLASS_NAME, 'pager')
-    pages_tags = pager_tag.find_elements(By.CLASS_NAME, 'pager-item-not-in-short-range')
 
-    last_page_tag = pages_tags[-1].find_element(By.CLASS_NAME, 'bloko-button').find_element(By.TAG_NAME, 'span')
-    last_page = last_page_tag.text
-    print('last page', last_page)
-    vacancies_list = []
     for vacancy_tag in vacancies_list_tags:
         title_tag = vacancy_tag.find_element(By.CLASS_NAME, 'serp-item__title')
         vacancy_title = title_tag.text
@@ -94,6 +82,30 @@ if __name__ == '__main__':
             'link': vacancy_link,
             'compensation': parse_compensation(compensation)
         })
+    print(link)
+    print(vacancies_list)
+    return vacancies_list
+
+
+# Press the green button in the gutter to run the script.
+if __name__ == '__main__':
+    chrome_options = Options()
+    chrome_options.page_load_strategy = 'eager'
+    driver = webdriver.Chrome(options=chrome_options)
+    base_url = "https://spb.hh.ru/search/vacancy?text=python&area=1&area=2"
+    driver.get(base_url)
+
+    pager_tag = driver.find_element(By.CLASS_NAME, 'pager')
+    pages_tags = pager_tag.find_elements(By.CLASS_NAME, 'pager-item-not-in-short-range')
+
+    last_page_tag = pages_tags[-1].find_element(By.CLASS_NAME, 'bloko-button').find_element(By.TAG_NAME, 'span')
+    last_page = int(last_page_tag.text)
+    print('last page', last_page)
+
+    vacancies_list = []
+    for i in range(last_page):
+        link = f'{base_url}&page={i}'
+        vacancies_list += get_page_vacancies(driver, link)
 
     print(len(vacancies_list))
 
