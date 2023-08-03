@@ -16,5 +16,9 @@ def parse_compensation(compensation_text):
     elif 'до' in compensation_text:
         max_compensation = compensation[1]
         currency = compensation[2]
-    return min_compensation, max_compensation, currency
+    return {
+        'min_compensation': min_compensation,
+        'max_compensation': max_compensation,
+        'currency': currency
+    }
 
