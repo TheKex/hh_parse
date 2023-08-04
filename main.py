@@ -1,6 +1,7 @@
 from pprint import pprint
 import re
 import time
+import json
 from concurrent.futures import ProcessPoolExecutor
 
 from selenium import webdriver
@@ -11,13 +12,20 @@ from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.ui import WebDriverWait
 
 from compensation.compensation import parse_compensation
+from tqdm import tqdm
 
 WORKERS = 4
+PROGRESS_BAR = True
+
 
 def divide_chunks(l, n):
     # looping till length l
     for i in range(0, len(l), n):
         yield l[i:i + n]
+
+
+def flat_list(l):
+    return [item for sublist in l for item in sublist]
 
 
 def wait_element(driver, delay_seconds=1, by=By.TAG_NAME, value=None):
@@ -37,11 +45,11 @@ def wait_element(driver, delay_seconds=1, by=By.TAG_NAME, value=None):
     )
 
 
-def search_terms_in_vacancy(driver, vacancy_link, terms):
-    driver.get(vacancy_link)
+def search_terms_in_vacancy(driver, vacancy, terms):
+    driver.get(vacancy['link'])
     vacancy_content_element = wait_element(
         driver=driver,
-        delay_seconds=20,
+        delay_seconds=30,
         by=By.CLASS_NAME,
         value='vacancy-description'
     )
@@ -50,6 +58,29 @@ def search_terms_in_vacancy(driver, vacancy_link, terms):
         if re.search(term, vacancy_content, flags=re.IGNORECASE):
             return True
     return False
+
+
+def filter_vacancy_chunk(vacancy_chunk, terms):
+    vacancy_chrome_options = Options()
+    vacancy_chrome_options.page_load_strategy = 'eager'
+    vacancy_chrome_options.add_argument('--headless')
+    vacancy_driver = webdriver.Chrome(options=vacancy_chrome_options)
+    result = [vacancy for vacancy in vacancy_chunk if search_terms_in_vacancy(vacancy_driver, vacancy, terms)]
+    vacancy_driver.close()
+    return result
+
+
+def filter_vacancies_by_chunks(vacancy_list, terms, chunk_size=4):
+    vacancy_chunk_list = list(divide_chunks(vacancy_list, chunk_size))
+    with ProcessPoolExecutor(max_workers=WORKERS) as pool:
+        result = list(
+            tqdm(
+                pool.map(filter_vacancy_chunk, vacancy_chunk_list, terms * len(vacancy_chunk_list)),
+                desc='Фильтрация вакансий по терминам: ',
+                total=len(vacancy_chunk_list)
+            )
+        )
+    return flat_list(result)
 
 
 def get_page_vacancies(driver, link):
@@ -75,6 +106,11 @@ def get_page_vacancies(driver, link):
         vacancy_title = title_tag.text
         vacancy_link = title_tag.get_attribute('href')
 
+        work_place_info_tag = vacancy_tag.find_element(By.CLASS_NAME, 'vacancy-serp-item__info')
+        company_name = work_place_info_tag.find_element(By.CLASS_NAME, 'vacancy-serp-item__meta-info-company').text
+        company_addr = work_place_info_tag.find_element(By.XPATH,
+                                                        '//div[@data-qa="vacancy-serp__vacancy-address"]').text
+
         try:
             compensation_tag = vacancy_tag.find_element(By.CLASS_NAME, 'bloko-header-section-2')
             compensation = compensation_tag.text
@@ -84,6 +120,8 @@ def get_page_vacancies(driver, link):
 
         result_vacancies_list.append({
             'title': vacancy_title,
+            'company': company_name,
+            'addr': company_addr,
             'link': vacancy_link,
             'compensation': parse_compensation(compensation)
         })
@@ -100,13 +138,16 @@ def parse_chunk_of_hh_pages(links, chrome_options):
 
 
 def parse_hh_by_chunks(chrome_options, links_list, chunk_size=4):
-    result = []
     divided_link_list = list(divide_chunks(links_list, chunk_size))
-    with ProcessPoolExecutor(max_workers=4) as pool:
-        result += pool.map(
+    with ProcessPoolExecutor(max_workers=WORKERS) as pool:
+        result = list(tqdm(pool.map(
             parse_chunk_of_hh_pages,
             divided_link_list,
             [chrome_options] * len(divided_link_list)
+        ),
+            total=len(divided_link_list),
+            desc='Получение всех вакансий со страниц: '
+        )
         )
     return result
 
@@ -130,6 +171,7 @@ if __name__ == '__main__':
 
     last_page_tag = pages_tags[-1].find_element(By.CLASS_NAME, 'bloko-button').find_element(By.TAG_NAME, 'span')
     last_page = int(last_page_tag.text)
+
     driver.close()
     # for i in range(last_page):
     #    link = f'{base_url}&page={i}'
@@ -137,17 +179,14 @@ if __name__ == '__main__':
 
     link_list = [f'{base_url}&pase={i}' for i in range(last_page)]
 
-    chunks = int(len(link_list) / WORKERS)
+    chunks = 4  # int(len(link_list) / WORKERS)
     vacancies_list = [item for sublist in parse_hh_by_chunks(chrome_options, link_list, chunks) for item in sublist]
 
-    print(len(vacancies_list))
+    terms = ['python', 'django']
 
-    vacancy_chrome_options = Options()
-    vacancy_chrome_options.page_load_strategy = 'eager'
-    vacancy_chrome_options.add_argument('--headless')
-    vacancy_driver = webdriver.Chrome(options=vacancy_chrome_options)
+    result_vacancies = filter_vacancies_by_chunks(vacancies_list, terms, 20)
 
-    # pprint([vacancy for vacancy in vacancies_list if
-    #         search_terms_in_vacancy(vacancy_driver, vacancy['link'], ['django', 'flask'])])
+    with open('vacancies.json', 'w', encoding='utf-8') as f:
+        json.dump(result_vacancies, f, ensure_ascii=False)
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
