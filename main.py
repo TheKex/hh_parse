@@ -5,7 +5,7 @@ import json
 from concurrent.futures import ProcessPoolExecutor
 
 from selenium import webdriver
-from selenium.common import NoSuchElementException
+from selenium.common import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support import expected_conditions
@@ -15,11 +15,9 @@ from compensation.compensation import parse_compensation
 from tqdm import tqdm
 
 WORKERS = 4
-PROGRESS_BAR = True
-
+VACANCY_FILTER_DELAY = 1
 
 def divide_chunks(l, n):
-    # looping till length l
     for i in range(0, len(l), n):
         yield l[i:i + n]
 
@@ -47,12 +45,17 @@ def wait_element(driver, delay_seconds=1, by=By.TAG_NAME, value=None):
 
 def search_terms_in_vacancy(driver, vacancy, terms):
     driver.get(vacancy['link'])
-    vacancy_content_element = wait_element(
-        driver=driver,
-        delay_seconds=30,
-        by=By.CLASS_NAME,
-        value='vacancy-description'
-    )
+    time.sleep(VACANCY_FILTER_DELAY)
+    try:
+        vacancy_content_element = wait_element(
+            driver=driver,
+            delay_seconds=30,
+            by=By.CLASS_NAME,
+            value='vacancy-description'
+        )
+    except TimeoutException as ex:
+        return False
+
     vacancy_content = vacancy_content_element.text
     for term in terms:
         if re.search(term, vacancy_content, flags=re.IGNORECASE):
@@ -63,7 +66,7 @@ def search_terms_in_vacancy(driver, vacancy, terms):
 def filter_vacancy_chunk(vacancy_chunk, terms):
     vacancy_chrome_options = Options()
     vacancy_chrome_options.page_load_strategy = 'eager'
-    vacancy_chrome_options.add_argument('--headless')
+    # vacancy_chrome_options.add_argument('--headless')
     vacancy_driver = webdriver.Chrome(options=vacancy_chrome_options)
     result = [vacancy for vacancy in vacancy_chunk if search_terms_in_vacancy(vacancy_driver, vacancy, terms)]
     vacancy_driver.close()
@@ -156,7 +159,7 @@ def parse_hh_by_chunks(chrome_options, links_list, chunk_size=4):
 if __name__ == '__main__':
     chrome_options = Options()
     chrome_options.page_load_strategy = 'eager'
-    chrome_options.add_argument('--headless')
+    # chrome_options.add_argument('--headless')
     driver = webdriver.Chrome(options=chrome_options)
     base_url = "https://spb.hh.ru/search/vacancy?text=python&area=1&area=2"
     driver.get(base_url)
