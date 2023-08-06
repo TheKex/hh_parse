@@ -16,6 +16,7 @@ from tqdm import tqdm
 
 WORKERS = 4
 VACANCY_FILTER_DELAY = 1
+MAX_PAGES = 10
 
 def divide_chunks(l, n):
     for i in range(0, len(l), n):
@@ -173,7 +174,7 @@ if __name__ == '__main__':
     pages_tags = pager_tag.find_elements(By.CLASS_NAME, 'pager-item-not-in-short-range')
 
     last_page_tag = pages_tags[-1].find_element(By.CLASS_NAME, 'bloko-button').find_element(By.TAG_NAME, 'span')
-    last_page = int(last_page_tag.text)
+    last_page = MAX_PAGES or int(last_page_tag.text)
 
     driver.close()
     # for i in range(last_page):
